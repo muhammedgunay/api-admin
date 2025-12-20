@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
 use Illuminate\Validation\ValidationException;
+use App\Models\Role as AppRole;
 
 class AuthController extends Controller
 {
@@ -36,26 +37,49 @@ class AuthController extends Controller
     // Login
     public function login(Request $request)
     {
-        $data = $request->validate([
+        $request->validate([
             'email' => 'required|email',
-            'password' => 'required|string',
+            'password' => 'required',
         ]);
+    
+        $user = User::where('email', $request->email)->first();
+    
+        if (!$user || !Hash::check($request->password, $user->password)) {
+            return response()->json(['message' => 'Invalid credentials'], 401);
+        }
+    
+        $token = $user->createToken('auth_token')->plainTextToken;
+    
+        /*
+        $isAdmin = $user->hasRole('admin');
 
-        $user = User::where('email', $data['email'])->first();
-
-        if (!$user || !Hash::check($data['password'], $user->password)) {
-            throw ValidationException::withMessages([
-                'email' => ['The provided credentials are incorrect.'],
+        if ($isAdmin) {
+            return response()->json([
+                'token' => $token,
+                'user' => $user,
+                'permissions' => [
+                    '__admin__' => true
+                ]
             ]);
         }
 
-        $token = $user->createToken('api_token')->plainTextToken;
+        */
 
+
+
+        $spatieRole = $user->roles()->first();
+
+        $role = AppRole::with('permissionSet')
+            ->where('id', $spatieRole->id)
+            ->first();
+    
         return response()->json([
+            'token' => $token,
             'user' => $user,
-            'token' => $token
+            'permissions' => $role?->permissionSet?->permissions ?? []
         ]);
     }
+    
 
     // Logout
     public function logout(Request $request)

@@ -50,4 +50,14 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    public function permissions(): array
+    {
+        $role = $this->roles()->first();
+        if (!$role || !$role->permissionSet) {
+            return [];
+        }
+    
+        return $role->permissionSet->permissionSet->permissions;
+    }
 }
