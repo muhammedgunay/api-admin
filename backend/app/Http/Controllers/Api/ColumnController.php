@@ -9,9 +9,11 @@ use Illuminate\Http\Request;
 
 class ColumnController extends Controller
 {
-    public function __construct()
+    // 📋 Tüm kolonları getir (tablo bilgileri ile)
+    public function all()
     {
-        $this->middleware('auth:sanctum');
+        $columns = Column::with('table')->get();
+        return response()->json($columns);
     }
 
     // 📋 Belirli bir tablonun kolonlarını getir

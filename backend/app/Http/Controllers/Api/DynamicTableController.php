@@ -11,6 +11,17 @@ use Spatie\Permission\Models\Permission;
 
 class DynamicTableController extends Controller
 {
+    // 📋 Listele
+    public function index()
+    {
+        $tables = DynamicTable::with('columns')
+            ->orderBy('order_index')
+            ->orderBy('name')
+            ->get();
+            
+        return response()->json($tables);
+    }
+
     public function store(Request $request)
     {
         $request->validate([

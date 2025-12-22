@@ -56,15 +56,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/users/{user}/give-permission', [UserController::class, 'givePermission']);
 });
 
-
-Route::middleware('auth:sanctum')->group(function () {
-    Route::get('/{table}', [GenericCrudController::class, 'index']);
-    Route::post('/{table}', [GenericCrudController::class, 'store']);
-    Route::get('/{table}/{id}', [GenericCrudController::class, 'show']);
-    Route::put('/{table}/{id}', [GenericCrudController::class, 'update']);
-    Route::delete('/{table}/{id}', [GenericCrudController::class, 'destroy']);
-});
-
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/admin/permissions', [AdminPermissionController::class, 'store']);
     Route::get('/admin/permissions', [AdminPermissionController::class, 'index']);
@@ -76,23 +67,35 @@ Route::middleware('auth:sanctum')->post(
     [RolePermissionSetController::class, 'assign']
 );
 
-
+// ✅ Spesifik route'lar önce gelmeli (generic route'lardan önce)
 Route::middleware('auth:sanctum')->group(function () {
     // Tables
-    Route::get('/tables', [TableController::class, 'index']);
+    Route::get('/tables', [TableController::class, 'index'])->name('api.tables.index');
     Route::post('/tables', [TableController::class, 'store']);
     Route::put('/tables/{table}', [TableController::class, 'update']);
+    Route::post('/tables/{table}/fix', [TableController::class, 'fix']); // Veritabanı tablosunu oluştur
     Route::delete('/tables/{table}', [TableController::class, 'destroy']);
 
-    // Columns (her tabloya özel)
-    Route::get('/tables/{table}/columns', [ColumnController::class, 'index']);
+    // Columns
+    Route::get('/columns', [ColumnController::class, 'all']); // Tüm kolonlar
+    Route::get('/tables/{table}/columns', [ColumnController::class, 'index']); // Belirli tablonun kolonları
     Route::post('/tables/{table}/columns', [ColumnController::class, 'store']);
     Route::put('/tables/{table}/columns/{column}', [ColumnController::class, 'update']);
     Route::delete('/tables/{table}/columns/{column}', [ColumnController::class, 'destroy']);
 });
 
 Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/dynamic-tables', [DynamicTableController::class, 'index']);
     Route::post('/dynamic-tables', [DynamicTableController::class, 'store']);
+});
+
+// ⚠️ Generic route'lar EN SONDA olmalı (spesifik route'lardan sonra)
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/{table}', [GenericCrudController::class, 'index']);
+    Route::post('/{table}', [GenericCrudController::class, 'store']);
+    Route::get('/{table}/{id}', [GenericCrudController::class, 'show']);
+    Route::put('/{table}/{id}', [GenericCrudController::class, 'update']);
+    Route::delete('/{table}/{id}', [GenericCrudController::class, 'destroy']);
 });
 
 Route::post(
