@@ -58,6 +58,6 @@ class User extends Authenticatable
             return [];
         }
     
-        return $role->permissionSet->permissionSet->permissions;
+        return $role->permissionSet->permissions ?? [];
     }
 }

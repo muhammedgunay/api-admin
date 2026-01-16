@@ -87,7 +87,7 @@ const submit = () => {
             </label>
             
             <input
-              v-if="field.type === 'text' || field.type === 'email' || !field.type"
+              v-if="['text', 'email', 'number', 'date', 'datetime-local', 'time'].includes(field.type) || !field.type"
               :id="field.name"
               v-model="formData[field.name]"
               :type="field.type || 'text'"

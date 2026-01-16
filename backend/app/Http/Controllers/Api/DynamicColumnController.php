@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use App\Models\DynamicTable;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Blueprint;
 
 class DynamicColumnController extends Controller
 {

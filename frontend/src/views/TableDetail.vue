@@ -2,6 +2,8 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api/axios'
+import { createRecord } from '../api/generic'
+import AddModal from '../components/AddModal.vue'
 
 const route = useRoute()
 const tableName = route.params.name
@@ -13,6 +15,10 @@ const loading = ref(false)
 const error = ref(null)
 const currentPage = ref(1)
 const totalPages = ref(1)
+
+// Modal için state'ler
+const showAddModal = ref(false)
+const submitting = ref(false)
 
 // Tablo bilgilerini çek
 const fetchTableInfo = async () => {
@@ -82,6 +88,87 @@ const visibleColumns = computed(() => {
   return columns.value.filter(col => col.is_visible)
 })
 
+// Form field'larını kolonlardan oluştur
+const formFields = computed(() => {
+  return columns.value
+    .filter(col => col.name !== 'id' && col.name !== 'created_at' && col.name !== 'updated_at')
+    .map(col => {
+      const field = {
+        name: col.name,
+        label: col.display_name,
+        required: col.is_required,
+        placeholder: col.display_name,
+      }
+
+      // Kolon tipine göre input tipi belirle
+      switch (col.type) {
+        case 'string':
+        case 'varchar':
+        case 'char':
+          field.type = 'text'
+          break
+        case 'text':
+          field.type = 'textarea'
+          break
+        case 'integer':
+        case 'bigint':
+        case 'smallint':
+          field.type = 'number'
+          break
+        case 'decimal':
+        case 'float':
+        case 'double':
+          field.type = 'number'
+          break
+        case 'boolean':
+          field.type = 'select'
+          field.options = [
+            { value: true, label: 'Evet' },
+            { value: false, label: 'Hayır' }
+          ]
+          break
+        case 'date':
+          field.type = 'date'
+          break
+        case 'datetime':
+        case 'timestamp':
+          field.type = 'datetime-local'
+          break
+        case 'email':
+          field.type = 'email'
+          break
+        default:
+          field.type = 'text'
+      }
+
+      return field
+    })
+})
+
+// Modal açma/kapama fonksiyonları
+const openAddModal = () => {
+  showAddModal.value = true
+}
+
+const closeAddModal = () => {
+  showAddModal.value = false
+}
+
+// Yeni kayıt ekleme
+const handleSubmit = async (formData) => {
+  submitting.value = true
+  
+  try {
+    await createRecord(tableName, formData)
+    await fetchData()
+    closeAddModal()
+  } catch (e) {
+    alert(e.response?.data?.message || 'Kayıt eklenirken bir hata oluştu')
+  } finally {
+    submitting.value = false
+  }
+}
+
 // Kayıt sil
 const deleteRecord = async (id) => {
   if (!confirm('Bu kaydı silmek istediğinize emin misiniz?')) return
@@ -115,7 +202,7 @@ onMounted(async () => {
           {{ tableInfo.description }}
         </p>
       </div>
-      <button class="btn-primary">+ Yeni Kayıt</button>
+      <button class="btn-primary" @click="openAddModal">+ Yeni Kayıt</button>
     </div>
 
     <div v-if="loading" class="loading">
@@ -130,7 +217,7 @@ onMounted(async () => {
     <div v-else-if="tableData.length === 0" class="empty-state">
       <div class="empty-icon">📭</div>
       <p>Henüz kayıt yok</p>
-      <button class="btn-primary">İlk Kaydı Ekle</button>
+      <button class="btn-primary" @click="openAddModal">İlk Kaydı Ekle</button>
     </div>
 
     <div v-else>
@@ -189,6 +276,16 @@ onMounted(async () => {
         </button>
       </div>
     </div>
+
+    <!-- Add Modal -->
+    <AddModal
+      :show="showAddModal"
+      :title="`Yeni ${tableInfo?.display_name || tableName} Kaydı`"
+      :fields="formFields"
+      :loading="submitting"
+      @close="closeAddModal"
+      @submit="handleSubmit"
+    />
   </div>
 </template>
 

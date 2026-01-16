@@ -51,15 +51,19 @@ Route::middleware('auth:sanctum')->get(
     [MeController::class, 'permissions']
 );
 
+// Users
 Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/users', [UserController::class, 'index']); // listele
     Route::post('/users/{user}/assign-role', [UserController::class, 'assignRole']);
     Route::post('/users/{user}/give-permission', [UserController::class, 'givePermission']);
 });
 
 Route::middleware(['auth:sanctum'])->group(function () {
-    Route::post('/admin/permissions', [AdminPermissionController::class, 'store']);
     Route::get('/admin/permissions', [AdminPermissionController::class, 'index']);
+    Route::post('/admin/permissions', [AdminPermissionController::class, 'store']);
     Route::get('/admin/permissions/{id}', [AdminPermissionController::class, 'show']);
+    Route::put('/admin/permissions/{id}', [AdminPermissionController::class, 'update']);
+    Route::delete('/admin/permissions/{id}', [AdminPermissionController::class, 'destroy']);
 });
 //yetki verme (role permission set)
 Route::middleware('auth:sanctum')->post(
