@@ -12,6 +12,7 @@ const error = ref(null)
 const showAddModal = ref(false)
 const showEditModal = ref(false)
 const showTableModal = ref(false)
+const showFilterModal = ref(false) // ← Yeni: Filtre modal'ı
 const submitting = ref(false)
 const currentPermissionSet = ref(null)
 const currentTable = ref(null)
@@ -24,6 +25,11 @@ const formData = ref({
 
 // Tablo ve kolon seçimleri
 const tablePermissions = ref({})
+
+// Filtre yönetimi
+const availableFilters = ref([]) // Tüm filtreler
+const assignedFilters = ref([]) // Permission set'e atanmış filtreler
+const selectedFilters = ref({}) // Tablo modal'ında seçilen filtreler: { list: [filterId], create: [], ... }
 
 // Tabloları ve kolonları çek
 const fetchTables = async () => {
@@ -79,6 +85,27 @@ const fetchPermissionSets = async () => {
   }
 }
 
+// Filtreleri çek
+const fetchFilters = async () => {
+  try {
+    const res = await api.get('/filters?paginate=false')
+    availableFilters.value = res.data
+  } catch (e) {
+    console.error('Filtreler yüklenemedi:', e)
+  }
+}
+
+// Permission set'e atanmış filtreleri çek
+const fetchAssignedFilters = async (permissionSetId) => {
+  try {
+    const res = await api.get(`/permission-sets/${permissionSetId}/filters`)
+    assignedFilters.value = res.data
+  } catch (e) {
+    console.error('Atanmış filtreler yüklenemedi:', e)
+    assignedFilters.value = []
+  }
+}
+
 // Yeni permission set oluştur
 const openAddModal = () => {
   formData.value = { name: '', permissions: {} }
@@ -87,7 +114,7 @@ const openAddModal = () => {
 }
 
 // Permission set düzenle
-const openEditModal = (permissionSet) => {
+const openEditModal = async (permissionSet) => {
   currentPermissionSet.value = permissionSet
   formData.value = {
     name: permissionSet.name,
@@ -99,6 +126,9 @@ const openEditModal = (permissionSet) => {
   Object.keys(formData.value.permissions).forEach(tableName => {
     tablePermissions.value[tableName] = { ...formData.value.permissions[tableName] }
   })
+  
+  // Atanmış filtreleri yükle
+  await fetchAssignedFilters(permissionSet.id)
   
   showEditModal.value = true
 }
@@ -122,11 +152,31 @@ const openTableModal = (table) => {
     }
   }
   
+  // Filtre seçimlerini başlat
+  selectedFilters.value = {
+    list: [],
+    view: [],
+    create: [],
+    update: [],
+    delete: []
+  }
+  
+  // Eğer permission set düzenleme modundaysa, atanmış filtreleri yükle
+  if (currentPermissionSet.value) {
+    const tableFilters = assignedFilters.value.filter(f => f.pivot.table_name === tableName)
+    tableFilters.forEach(filter => {
+      const action = filter.pivot.action
+      if (selectedFilters.value[action]) {
+        selectedFilters.value[action].push(filter.id)
+      }
+    })
+  }
+  
   showTableModal.value = true
 }
 
 // Tablo yetkilerini kaydet
-const saveTablePermissions = () => {
+const saveTablePermissions = async () => {
   if (!currentTable.value) return
   
   const tableName = currentTable.value.name
@@ -140,8 +190,55 @@ const saveTablePermissions = () => {
   })
   
   formData.value.permissions[tableName] = permissions
+  
+  // Eğer permission set düzenleme modundaysa, filtreleri de kaydet
+  if (currentPermissionSet.value && selectedFilters.value) {
+    try {
+      // Her action için filtreleri kaydet
+      const actions = ['list', 'create', 'update', 'delete']
+      
+      for (const action of actions) {
+        const selectedFilterIds = selectedFilters.value[action] || []
+        const existingFilters = assignedFilters.value.filter(
+          f => f.pivot.table_name === tableName && f.pivot.action === action
+        )
+        
+        // Yeni eklenen filtreleri ata
+        for (const filterId of selectedFilterIds) {
+          const alreadyAssigned = existingFilters.some(f => f.id === filterId)
+          if (!alreadyAssigned) {
+            await api.post(`/permission-sets/${currentPermissionSet.value.id}/filters/attach`, {
+              filter_id: filterId,
+              table_name: tableName,
+              action: action,
+              priority: 10
+            })
+          }
+        }
+        
+        // Kaldırılan filtreleri çıkar
+        for (const filter of existingFilters) {
+          if (!selectedFilterIds.includes(filter.id)) {
+            await api.post(`/permission-sets/${currentPermissionSet.value.id}/filters/detach`, {
+              filter_id: filter.id,
+              table_name: tableName,
+              action: action
+            })
+          }
+        }
+      }
+      
+      // Atanmış filtreleri yeniden yükle
+      await fetchAssignedFilters(currentPermissionSet.value.id)
+    } catch (e) {
+      console.error('Filtre kaydetme hatası:', e)
+      alert('Filtreler kaydedilirken bir hata oluştu')
+    }
+  }
+  
   showTableModal.value = false
 }
+
 
 // Kolon seçimi
 const toggleColumn = (action, columnName) => {
@@ -192,6 +289,24 @@ const isColumnSelected = (action, columnName) => {
   if (!currentTable.value) return false
   const tableName = currentTable.value.name
   return tablePermissions.value[tableName]?.[action]?.columns?.includes(columnName) || false
+}
+
+// Filtre seç/kaldır
+const toggleFilter = (action, filterId, checked) => {
+  if (!selectedFilters.value[action]) {
+    selectedFilters.value[action] = []
+  }
+  
+  if (checked) {
+    if (!selectedFilters.value[action].includes(filterId)) {
+      selectedFilters.value[action].push(filterId)
+    }
+  } else {
+    const index = selectedFilters.value[action].indexOf(filterId)
+    if (index > -1) {
+      selectedFilters.value[action].splice(index, 1)
+    }
+  }
 }
 
 // Form gönder
@@ -259,7 +374,7 @@ const hasTablePermission = (tableName) => {
 }
 
 onMounted(async () => {
-  await Promise.all([fetchTables(), fetchPermissionSets()])
+  await Promise.all([fetchTables(), fetchPermissionSets(), fetchFilters()])
 })
 </script>
 

@@ -24,9 +24,37 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'name',
+        'surname',
         'email',
         'password',
+        'created_by',
+        'updated_by',
     ];
+
+    /**
+     * Boot method to automatically set audit columns
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        // Automatically set created_by when creating
+        static::creating(function ($model) {
+            if (auth()->check() && !$model->created_by) {
+                $model->created_by = auth()->id();
+            }
+            if (auth()->check() && !$model->updated_by) {
+                $model->updated_by = auth()->id();
+            }
+        });
+
+        // Automatically set updated_by when updating
+        static::updating(function ($model) {
+            if (auth()->check()) {
+                $model->updated_by = auth()->id();
+            }
+        });
+    }
 
     /**
      * The attributes that should be hidden for serialization.

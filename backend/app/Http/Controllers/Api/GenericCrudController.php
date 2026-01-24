@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use App\Models\DynamicTable;
 
 class GenericCrudController extends Controller
@@ -52,6 +53,30 @@ class GenericCrudController extends Controller
         abort_if(!$perm, 403);
     
         $data = $request->only($perm['columns']);
+        
+        // GÜVENLİK: created_by ve updated_by alanlarını request'ten çıkar
+        // (Kullanıcı bunları manipüle edemez, backend otomatik doldurur)
+        unset($data['created_by'], $data['updated_by'], $data['created_at'], $data['updated_at']);
+        
+        // created_by alanını backend'de doldur
+        if (Schema::hasColumn($table, 'created_by')) {
+            $data['created_by'] = auth()->id();
+        }
+        
+        // updated_by alanını backend'de doldur
+        if (Schema::hasColumn($table, 'updated_by')) {
+            $data['updated_by'] = auth()->id();
+        }
+        
+        // created_at alanını backend'de doldur
+        if (Schema::hasColumn($table, 'created_at')) {
+            $data['created_at'] = now();
+        }
+        
+        // updated_at alanını backend'de doldur
+        if (Schema::hasColumn($table, 'updated_at')) {
+            $data['updated_at'] = now();
+        }
     
         $id = DB::table($table)->insertGetId($data);
     
@@ -75,6 +100,19 @@ class GenericCrudController extends Controller
         abort_if(!$perm, 403);
     
         $data = $request->only($perm['columns']);
+        
+        // GÜVENLİK: created_by ve updated_by alanlarını request'ten çıkar
+        unset($data['created_by'], $data['updated_by'], $data['created_at'], $data['updated_at']);
+        
+        // updated_by alanını backend'de doldur
+        if (Schema::hasColumn($table, 'updated_by')) {
+            $data['updated_by'] = auth()->id();
+        }
+        
+        // updated_at alanını backend'de doldur
+        if (Schema::hasColumn($table, 'updated_at')) {
+            $data['updated_at'] = now();
+        }
     
         DB::table($table)->where('id', $id)->update($data);
     

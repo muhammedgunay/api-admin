@@ -55,6 +55,12 @@ const logout = () => {
               </router-link>
             </li>
             <li>
+              <router-link to="/filters" class="menu-link">
+                <span class="icon">🔍</span>
+                Filtreler
+              </router-link>
+            </li>
+            <li>
               <router-link to="/columns" class="menu-link">
                 <span class="icon">📊</span>
                 Kolonlar

@@ -1,8 +1,10 @@
+```
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { getAllColumns, createColumn } from '../api/column'
+import { getAllColumns, createColumn, deleteColumn as deleteColumnApi } from '../api/column'
 import { getTables } from '../api/tables'
+import api from '../api/axios'
 import AddModal from '../components/AddModal.vue'
 
 const router = useRouter()
@@ -25,62 +27,196 @@ const columnTypes = [
   { value: 'decimal', label: 'Ondalıklı Sayı (Decimal)' },
 ]
 
-// Form alanları
-const formFields = computed(() => [
-  {
-    name: 'table_id',
-    label: 'Tablo',
-    type: 'select',
-    required: true,
-    options: tables.value.map(table => ({
-      value: table.id,
-      label: `${table.display_name} (${table.name})`,
-    })),
-  },
-  {
-    name: 'name',
-    label: 'Kolon Adı',
-    type: 'text',
-    required: true,
-    placeholder: 'ornek_kolon_adi (snake_case)',
-  },
-  {
-    name: 'display_name',
-    label: 'Görünen Ad',
-    type: 'text',
-    required: true,
-    placeholder: 'Örnek Kolon Adı',
-  },
-  {
-    name: 'type',
-    label: 'Veri Tipi',
-    type: 'select',
-    required: true,
-    options: columnTypes,
-  },
-  {
-    name: 'is_visible',
-    label: 'Görünür',
-    type: 'select',
-    required: false,
-    value: 'true',
-    options: [
-      { value: 'true', label: 'Evet' },
-      { value: 'false', label: 'Hayır' },
-    ],
-  },
-  {
-    name: 'is_editable',
-    label: 'Düzenlenebilir',
-    type: 'select',
-    required: false,
-    value: 'true',
-    options: [
-      { value: 'true', label: 'Evet' },
-      { value: 'false', label: 'Hayır' },
-    ],
-  },
-])
+// Foreign key için seçilen tablo
+const selectedForeignTable = ref('')
+const foreignTableColumns = ref([])
+const isForeignKey = ref(false)
+
+// Foreign tablonun kolonlarını yükle
+const loadForeignTableColumns = async (tableName) => {
+  if (!tableName) {
+    foreignTableColumns.value = []
+    return
+  }
+  
+  try {
+    // Tablonun kolonlarını çek
+    const table = tables.value.find(t => t.name === tableName)
+    if (table && table.id) {
+      const response = await api.get(`/tables/${table.id}/columns`)
+      foreignTableColumns.value = response.data.map(col => ({
+        value: col.name,
+        label: `${col.display_name} (${col.name})`
+      }))
+    }
+  } catch (error) {
+    console.error('Foreign tablo kolonları yüklenemedi:', error)
+    foreignTableColumns.value = []
+  }
+}
+
+// Foreign table değiştiğinde kolonları yükle
+watch(selectedForeignTable, (newTable) => {
+  loadForeignTableColumns(newTable)
+})
+
+// Form alanları - artık reactive
+const formFields = computed(() => {
+  const fields = [
+    {
+      name: 'table_id',
+      label: 'Tablo',
+      type: 'select',
+      required: true,
+      options: tables.value.map(table => ({
+        value: table.id,
+        label: `${table.display_name} (${table.name})`,
+      })),
+    },
+    {
+      name: 'name',
+      label: 'Kolon Adı',
+      type: 'text',
+      required: true,
+      placeholder: 'ornek_kolon_adi (snake_case)',
+    },
+    {
+      name: 'display_name',
+      label: 'Görünen Ad',
+      type: 'text',
+      required: true,
+      placeholder: 'Örnek Kolon Adı',
+    },
+    {
+      name: 'type',
+      label: 'Veri Tipi',
+      type: 'select',
+      required: true,
+      options: columnTypes,
+    },
+    {
+      name: 'is_visible',
+      label: 'Görünür',
+      type: 'select',
+      required: false,
+      value: 'true',
+      options: [
+        { value: 'true', label: 'Evet' },
+        { value: 'false', label: 'Hayır' },
+      ],
+    },
+    {
+      name: 'is_editable',
+      label: 'Düzenlenebilir',
+      type: 'select',
+      required: false,
+      value: 'true',
+      options: [
+        { value: 'true', label: 'Evet' },
+        { value: 'false', label: 'Hayır' },
+      ],
+    },
+    {
+      name: 'is_required',
+      label: 'Zorunlu',
+      type: 'select',
+      required: false,
+      value: 'false',
+      options: [
+        { value: 'true', label: 'Evet' },
+        { value: 'false', label: 'Hayır' },
+      ],
+    },
+    // 🔗 FOREIGN KEY ALANLARI
+    {
+      name: 'is_foreign_key',
+      label: '🔗 Foreign Key (Başka tabloya bağlantı)',
+      type: 'select',
+      required: false,
+      value: 'false',
+      options: [
+        { value: 'false', label: 'Hayır - Normal kolon' },
+        { value: 'true', label: 'Evet - Başka tabloya bağlantı' },
+      ],
+      onChange: (value) => {
+        isForeignKey.value = value === 'true' || value === true
+      }
+    },
+  ]
+
+  // Eğer foreign key seçildiyse, foreign key alanlarını ekle
+  if (isForeignKey.value) {
+    fields.push(
+      {
+        name: 'foreign_table',
+        label: 'Bağlanacak Tablo',
+        type: 'select',
+        required: true,
+        options: tables.value.map(table => ({
+          value: table.name,
+          label: `${table.display_name} (${table.name})`,
+        })),
+        onChange: (value) => {
+          selectedForeignTable.value = value
+        }
+      },
+      {
+        name: 'foreign_column',
+        label: 'Bağlanacak Kolon',
+        type: 'select',
+        required: true,
+        value: 'id',
+        options: foreignTableColumns.value.length > 0 
+          ? foreignTableColumns.value 
+          : [{ value: 'id', label: 'id (varsayılan)' }],
+        hint: selectedForeignTable.value 
+          ? `${selectedForeignTable.value} tablosunun hangi kolonuna bağlanacak?` 
+          : 'Önce tablo seçin',
+      },
+      {
+        name: 'foreign_display_column',
+        label: 'Gösterilecek Kolon',
+        type: 'select',
+        required: true,
+        value: 'name',
+        options: foreignTableColumns.value.length > 0 
+          ? foreignTableColumns.value 
+          : [{ value: 'name', label: 'name (varsayılan)' }],
+        hint: selectedForeignTable.value 
+          ? `Dropdown'da ${selectedForeignTable.value} tablosundan hangi kolon gösterilsin?` 
+          : 'Önce tablo seçin',
+      },
+      {
+        name: 'on_delete',
+        label: 'Silme Davranışı',
+        type: 'select',
+        required: false,
+        value: 'restrict',
+        options: [
+          { value: 'cascade', label: 'Cascade - Bağlı kayıtları da sil' },
+          { value: 'set null', label: 'Set Null - NULL yap' },
+          { value: 'restrict', label: 'Restrict - Silmeyi engelle' },
+          { value: 'no action', label: 'No Action - Hiçbir şey yapma' },
+        ],
+      },
+      {
+        name: 'on_update',
+        label: 'Güncelleme Davranışı',
+        type: 'select',
+        required: false,
+        value: 'cascade',
+        options: [
+          { value: 'cascade', label: 'Cascade - Bağlı kayıtları da güncelle' },
+          { value: 'set null', label: 'Set Null - NULL yap' },
+          { value: 'restrict', label: 'Restrict - Güncellemeyi engelle' },
+          { value: 'no action', label: 'No Action - Hiçbir şey yapma' },
+        ],
+      }
+    )
+  }
+
+  return fields
+})
 
 // Tüm kolonları çek
 const fetchColumns = async () => {
@@ -116,11 +252,20 @@ const openAddModal = () => {
     router.push('/tables')
     return
   }
+  // State'leri sıfırla
+  isForeignKey.value = false
+  selectedForeignTable.value = ''
+  foreignTableColumns.value = []
+  
   showAddModal.value = true
 }
 
 const closeAddModal = () => {
   showAddModal.value = false
+  // State'leri sıfırla
+  isForeignKey.value = false
+  selectedForeignTable.value = ''
+  foreignTableColumns.value = []
 }
 
 const handleSubmit = async (formData) => {
@@ -133,6 +278,17 @@ const handleSubmit = async (formData) => {
       table_id: parseInt(formData.table_id),
       is_visible: formData.is_visible === 'true' || formData.is_visible === true,
       is_editable: formData.is_editable === 'true' || formData.is_editable === true,
+      is_required: formData.is_required === 'true' || formData.is_required === true,
+      is_foreign_key: formData.is_foreign_key === 'true' || formData.is_foreign_key === true,
+    }
+    
+    // Eğer foreign key değilse, foreign key alanlarını temizle
+    if (!data.is_foreign_key) {
+      delete data.foreign_table
+      delete data.foreign_column
+      delete data.foreign_display_column
+      delete data.on_delete
+      delete data.on_update
     }
     
     await createColumn(data.table_id, data)
@@ -147,13 +303,18 @@ const handleSubmit = async (formData) => {
 }
 
 const deleteColumn = async (column) => {
-  if (!confirm(`"${column.display_name}" kolonunu silmek istediğinize emin misiniz?`)) {
+  const warningMessage = column.is_foreign_key 
+    ? `"${column.display_name}" kolonunu silmek istediğinize emin misiniz?\n\n⚠️ Bu kolon bir Foreign Key'dir. Foreign key constraint'i de silinecektir.`
+    : `"${column.display_name}" kolonunu silmek istediğinize emin misiniz?`
+  
+  if (!confirm(warningMessage)) {
     return
   }
   
   try {
-    // Delete API call will be added when needed
-    alert('Silme işlemi henüz implement edilmedi')
+    await deleteColumnApi(column.table_id, column.id)
+    await fetchColumns()
+    alert('Kolon başarıyla silindi' + (column.is_foreign_key ? ' (Foreign key constraint de silindi)' : ''))
   } catch (error) {
     console.error('Kolon silme hatası:', error)
     alert(error.response?.data?.message || 'Kolon silinirken bir hata oluştu')
@@ -246,6 +407,7 @@ const clearSearch = () => {
             <th>Kolon Adı</th>
             <th>Görünen Ad</th>
             <th>Tip</th>
+            <th>🔗 Foreign Key</th>
             <th>Görünür</th>
             <th>Düzenlenebilir</th>
             <th class="actions-col">İşlemler</th>
@@ -264,6 +426,12 @@ const clearSearch = () => {
             <td>{{ column.display_name }}</td>
             <td>
               <span class="type-badge">{{ column.type }}</span>
+            </td>
+            <td>
+              <span v-if="column.is_foreign_key" class="fk-badge">
+                🔗 {{ column.foreign_table }}
+              </span>
+              <span v-else class="no-fk">-</span>
             </td>
             <td>
               <span :class="['status-badge', column.is_visible ? 'visible' : 'hidden']">
@@ -570,5 +738,19 @@ const clearSearch = () => {
 
 .btn-icon:hover {
   transform: scale(1.2);
+}
+
+.fk-badge {
+  background: #fef3c7;
+  color: #92400e;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.no-fk {
+  color: #9ca3af;
+  font-size: 13px;
 }
 </style>

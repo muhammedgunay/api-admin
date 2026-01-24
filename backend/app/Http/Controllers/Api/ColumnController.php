@@ -34,6 +34,13 @@ class ColumnController extends Controller
             'is_visible' => 'boolean',
             'is_editable' => 'boolean',
             'is_required' => 'boolean',
+            // Foreign key alanları
+            'is_foreign_key' => 'boolean',
+            'foreign_table' => 'nullable|string',
+            'foreign_column' => 'nullable|string',
+            'foreign_display_column' => 'nullable|string',
+            'on_delete' => 'nullable|string|in:cascade,set null,restrict,no action',
+            'on_update' => 'nullable|string|in:cascade,set null,restrict,no action',
         ]);
 
         // 1️⃣ Meta kolon kaydı oluştur
@@ -41,9 +48,10 @@ class ColumnController extends Controller
 
         // 2️⃣ Gerçek veritabanı tablosuna kolon ekle
         if (Schema::hasTable($table->name)) {
-            Schema::table($table->name, function (Blueprint $blueprint) use ($validated) {
+            Schema::table($table->name, function (Blueprint $blueprint) use ($validated, $table) {
                 $columnName = $validated['name'];
                 $isRequired = $validated['is_required'] ?? false;
+                $isForeignKey = $validated['is_foreign_key'] ?? false;
                 
                 // Tip eşleştirme
                 $col = match ($validated['type']) {
@@ -68,11 +76,33 @@ class ColumnController extends Controller
                 if (!$isRequired && $validated['type'] !== 'boolean') {
                     $col->nullable();
                 }
+                
+                // 🔗 FOREIGN KEY CONSTRAINT OLUŞTUR
+                if ($isForeignKey && !empty($validated['foreign_table']) && !empty($validated['foreign_column'])) {
+                    $foreignTable = $validated['foreign_table'];
+                    $foreignColumn = $validated['foreign_column'];
+                    $onDelete = $validated['on_delete'] ?? 'restrict';
+                    $onUpdate = $validated['on_update'] ?? 'cascade';
+                    
+                    // Foreign tablo var mı kontrol et
+                    if (Schema::hasTable($foreignTable)) {
+                        // Constraint adı oluştur
+                        $constraintName = 'fk_' . $table->name . '_' . $columnName;
+                        
+                        // Foreign key constraint ekle
+                        $blueprint->foreign($columnName, $constraintName)
+                            ->references($foreignColumn)
+                            ->on($foreignTable)
+                            ->onDelete($onDelete)
+                            ->onUpdate($onUpdate);
+                    }
+                }
             });
         }
 
         return response()->json([
-            'message' => 'Kolon eklendi ve veritabanı tablosu güncellendi',
+            'message' => 'Kolon eklendi ve veritabanı tablosu güncellendi' . 
+                        ($validated['is_foreign_key'] ?? false ? ' (Foreign key constraint oluşturuldu)' : ''),
             'column' => $column
         ]);
     }
@@ -100,7 +130,20 @@ class ColumnController extends Controller
     {
         // 1️⃣ Gerçek veritabanı tablosundan kolon sil
         if (Schema::hasTable($table->name) && Schema::hasColumn($table->name, $column->name)) {
-            Schema::table($table->name, function (Blueprint $blueprint) use ($column) {
+            Schema::table($table->name, function (Blueprint $blueprint) use ($column, $table) {
+                // 🔗 Eğer foreign key ise, önce constraint'i sil
+                if ($column->is_foreign_key) {
+                    $constraintName = 'fk_' . $table->name . '_' . $column->name;
+                    
+                    try {
+                        $blueprint->dropForeign($constraintName);
+                    } catch (\Exception $e) {
+                        // Constraint bulunamazsa devam et
+                        // (Bazı durumlarda constraint adı farklı olabilir)
+                    }
+                }
+                
+                // Kolonu sil
                 $blueprint->dropColumn($column->name);
             });
         }

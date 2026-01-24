@@ -1,12 +1,34 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import api from '../api/axios'
+import AddModal from '../components/AddModal.vue'
 
 const users = ref([])
+const roles = ref([])
+const columns = ref([]) // Dinamik kolonlar
 const loading = ref(false)
 const error = ref(null)
 const currentPage = ref(1)
 const totalPages = ref(1)
+
+// Modal Durumları
+const showModal = ref(false)
+const modalLoading = ref(false)
+const modalTitle = ref('')
+const currentUser = ref(null)
+
+// Form Alanları Tanımı (AddModal için)
+const modalFields = ref([])
+
+// Kolonları çek
+const fetchColumns = async () => {
+  try {
+    const res = await api.get('/users/columns')
+    columns.value = res.data.columns
+  } catch (e) {
+    console.error('Kolonlar yüklenemedi:', e)
+  }
+}
 
 // Kullanıcıları çek
 const fetchUsers = async () => {
@@ -16,7 +38,6 @@ const fetchUsers = async () => {
   try {
     const res = await api.get(`/users?page=${currentPage.value}`)
     
-    // Pagination kontrolü
     if (res.data.data) {
       users.value = res.data.data
       currentPage.value = res.data.current_page
@@ -33,14 +54,162 @@ const fetchUsers = async () => {
   }
 }
 
+// Rolleri çek
+const fetchRoles = async () => {
+  try {
+    const res = await api.get('/roles')
+    roles.value = res.data
+  } catch (e) {
+    console.error('Roller yüklenemedi:', e)
+  }
+}
+
+// Kolon tipini belirle
+const getFieldType = (columnName) => {
+  if (columnName === 'password') return 'password'
+  if (columnName === 'email') return 'email'
+  return 'text'
+}
+
+// Kolon label'ını oluştur (Türkçeleştirme)
+const getFieldLabel = (columnName) => {
+  const labels = {
+    'id': 'ID',
+    'name': 'Ad',
+    'surname': 'Soyad',
+    'email': 'E-posta',
+    'password': 'Şifre',
+    'created_at': 'Oluşturulma',
+    'updated_at': 'Güncellenme',
+    'created_by': 'Oluşturan',
+    'updated_by': 'Güncelleyen'
+  }
+  return labels[columnName] || columnName.charAt(0).toUpperCase() + columnName.slice(1).replace(/_/g, ' ')
+}
+
+// Modal Form Alanlarını Dinamik Olarak Hazırla
+const prepareModalFields = (user = null) => {
+  const roleOptions = roles.value.map(r => ({ label: r.name, value: r.name }))
+  
+  const fields = []
+  
+  // Audit kolonları - formda gösterilmemeli
+  const auditColumns = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+  
+  // Kolonları dinamik olarak form alanlarına çevir
+  columns.value.forEach(col => {
+    // ID, timestamp ve audit kolonlarını formdan çıkar
+    if (auditColumns.includes(col)) {
+      return
+    }
+    
+    fields.push({
+      name: col,
+      label: getFieldLabel(col),
+      type: getFieldType(col),
+      required: ['name', 'email'].includes(col),
+      value: user?.[col] || ''
+    })
+  })
+  
+  // Password alanını manuel ekle (backend'den gelmiyor çünkü güvenlik)
+  fields.push({
+    name: 'password',
+    label: 'Şifre',
+    type: 'password',
+    required: !user, // Yeni kullanıcıda zorunlu, düzenlemede opsiyonel
+    placeholder: user ? 'Boş bırakılırsa değişmez' : '',
+    value: ''
+  })
+  
+  // Roller alanını ekle (bu bir kolon değil, ilişki)
+  fields.push({
+    name: 'roles',
+    label: 'Roller',
+    type: 'select',
+    options: roleOptions,
+    value: user && user.roles && user.roles.length > 0 ? user.roles[0].name : ''
+  })
+  
+  return fields
+}
+
+// Görünür kolonları hesapla (tablo için)
+const visibleColumns = computed(() => {
+  return columns.value.filter(col => {
+    // ID, created_at, updated_at her zaman göster
+    return true
+  })
+})
+
+// Yeni Kullanıcı Ekle
+const openAddModal = () => {
+  currentUser.value = null
+  modalTitle.value = 'Yeni Kullanıcı Ekle'
+  modalFields.value = prepareModalFields()
+  showModal.value = true
+}
+
+// Düzenle
+const openEditModal = (user) => {
+  currentUser.value = user
+  modalTitle.value = 'Kullanıcı Düzenle'
+  modalFields.value = prepareModalFields(user)
+  showModal.value = true
+}
+
+// Modal Submit
+const handleSave = async (formData) => {
+  modalLoading.value = true
+  try {
+    const payload = { ...formData }
+    if (payload.roles && payload.roles !== '') {
+      payload.roles = [payload.roles]
+    } else {
+      payload.roles = []
+    }
+
+    if (!payload.password && currentUser.value) {
+      delete payload.password
+    }
+
+    if (currentUser.value) {
+      await api.put(`/users/${currentUser.value.id}`, payload)
+    } else {
+      await api.post('/users', payload)
+    }
+
+    await fetchUsers()
+    showModal.value = false
+  } catch (e) {
+    alert(e.response?.data?.message || 'Kaydetme başarısız')
+  } finally {
+    modalLoading.value = false
+  }
+}
+
+// Sil
+const deleteUser = async (user) => {
+  if (!confirm(`${user.name} kullanıcısını silmek istediğinize emin misiniz?`)) return
+
+  try {
+    await api.delete(`/users/${user.id}`)
+    await fetchUsers()
+  } catch (e) {
+    alert(e.response?.data?.message || 'Silme işlemi başarısız')
+  }
+}
+
 // Sayfa değiştir
 const changePage = (page) => {
   currentPage.value = page
   fetchUsers()
 }
 
-onMounted(() => {
-  fetchUsers()
+onMounted(async () => {
+  await fetchColumns()
+  await fetchRoles()
+  await fetchUsers()
 })
 </script>
 
@@ -49,8 +218,11 @@ onMounted(() => {
     <div class="header">
       <div>
         <h1>Kullanıcılar</h1>
-        <p class="description">Sistemdeki tüm kullanıcıları görüntüleyin</p>
+        <p class="description">Sistemdeki tüm kullanıcıları görüntüleyin ve yönetin</p>
       </div>
+      <button class="btn-primary" @click="openAddModal">
+        + Yeni Kullanıcı
+      </button>
     </div>
 
     <div v-if="loading" class="loading">
@@ -65,6 +237,7 @@ onMounted(() => {
     <div v-else-if="users.length === 0" class="empty-state">
       <div class="empty-icon">👥</div>
       <p>Henüz kullanıcı yok</p>
+      <button class="btn-primary" @click="openAddModal">İlk Kullanıcıyı Oluştur</button>
     </div>
 
     <div v-else>
@@ -72,29 +245,32 @@ onMounted(() => {
         <table class="data-table">
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Ad</th>
-              <th>E-posta</th>
+              <th v-for="col in visibleColumns" :key="col">
+                {{ getFieldLabel(col) }}
+              </th>
               <th>Roller</th>
-              <th>Oluşturulma</th>
               <th class="actions-col">İşlemler</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="user in users" :key="user.id">
-              <td>{{ user.id }}</td>
-              <td>{{ user.name }}</td>
-              <td>{{ user.email }}</td>
+              <td v-for="col in visibleColumns" :key="col">
+                <template v-if="col === 'created_at' || col === 'updated_at'">
+                  {{ user[col] ? new Date(user[col]).toLocaleDateString('tr-TR') : '-' }}
+                </template>
+                <template v-else>
+                  {{ user[col] || '-' }}
+                </template>
+              </td>
               <td>
                 <span v-if="user.roles && user.roles.length > 0" class="role-badge">
                   {{ user.roles.map(r => r.name).join(', ') }}
                 </span>
                 <span v-else class="no-role">Rol yok</span>
               </td>
-              <td>{{ new Date(user.created_at).toLocaleDateString('tr-TR') }}</td>
               <td class="actions-col">
-                <button class="btn-icon" title="Düzenle">✏️</button>
-                <button class="btn-icon" title="Sil">🗑️</button>
+                <button class="btn-icon" title="Düzenle" @click="openEditModal(user)">✏️</button>
+                <button class="btn-icon" title="Sil" @click="deleteUser(user)">🗑️</button>
               </td>
             </tr>
           </tbody>
@@ -124,6 +300,15 @@ onMounted(() => {
         </button>
       </div>
     </div>
+
+    <AddModal
+      :show="showModal"
+      :title="modalTitle"
+      :fields="modalFields"
+      :loading="modalLoading"
+      @close="showModal = false"
+      @submit="handleSave"
+    />
   </div>
 </template>
 
@@ -150,6 +335,28 @@ onMounted(() => {
   margin: 0;
   color: #6b7280;
   font-size: 14px;
+}
+
+.btn-primary {
+  background: #3b82f6;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-primary:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(59, 130, 246, 0.2);
 }
 
 .loading {
@@ -270,6 +477,7 @@ onMounted(() => {
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
+  margin-right: 4px;
 }
 
 .no-role {

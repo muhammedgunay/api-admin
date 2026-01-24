@@ -7,6 +7,7 @@ import Dashboard from '../views/Dashboard.vue'
 import Users from '../views/Users.vue'
 import Roles from '../views/Roles.vue'
 import Permissions from '../views/Permissions.vue'
+import Filters from '../views/Filters.vue'
 import Tables from '../views/Tables.vue'
 import Columns from '../views/Columns.vue'
 import TableDetail from '../views/TableDetail.vue'
@@ -25,6 +26,7 @@ const routes = [
       { path: 'users', component: Users },
       { path: 'roles', component: Roles },
       { path: 'permissions', component: Permissions },
+      { path: 'filters', component: Filters },
       { path: 'tables', component: Tables },
       { path: 'columns', component: Columns },
 

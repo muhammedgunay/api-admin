@@ -42,15 +42,78 @@ class TableController extends Controller
 
         // 2️⃣ Gerçek veritabanı tablosunu oluştur
         if (!Schema::hasTable($tableName)) {
-            Schema::create($tableName, function (Blueprint $table) {
-                $table->id();
-                $table->timestamps();
+            Schema::create($tableName, function (Blueprint $blueprint) {
+                $blueprint->id();
+                $blueprint->unsignedBigInteger('created_by')->nullable(); // Kaydı oluşturan
+                $blueprint->unsignedBigInteger('updated_by')->nullable(); // Son güncelleyen
+                $blueprint->timestamps();
             });
+
+            // 3️⃣ Otomatik eklenen kolonları 'columns' tablosuna da kaydet
+            $defaultColumns = [
+                [
+                    'table_id' => $table->id,
+                    'name' => 'id',
+                    'display_name' => 'ID',
+                    'type' => 'integer',
+                    'is_visible' => true,
+                    'is_editable' => false,
+                    'is_required' => true,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+                [
+                    'table_id' => $table->id,
+                    'name' => 'created_by',
+                    'display_name' => 'Oluşturan',
+                    'type' => 'integer',
+                    'is_visible' => false, // Listede varsayılan gizli olabilir
+                    'is_editable' => false,
+                    'is_required' => false,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+                [
+                    'table_id' => $table->id,
+                    'name' => 'updated_by',
+                    'display_name' => 'Güncelleyen',
+                    'type' => 'integer',
+                    'is_visible' => false,
+                    'is_editable' => false,
+                    'is_required' => false,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+                [
+                    'table_id' => $table->id,
+                    'name' => 'created_at',
+                    'display_name' => 'Oluşturulma Tarihi',
+                    'type' => 'datetime',
+                    'is_visible' => true,
+                    'is_editable' => false,
+                    'is_required' => false,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+                [
+                    'table_id' => $table->id,
+                    'name' => 'updated_at',
+                    'display_name' => 'Güncellenme Tarihi',
+                    'type' => 'datetime',
+                    'is_visible' => true,
+                    'is_editable' => false,
+                    'is_required' => false,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+            ];
+
+            \DB::table('columns')->insert($defaultColumns);
         }
 
         return response()->json([
             'message' => 'Tablo başarıyla oluşturuldu',
-            'table' => $table
+            'table' => $table->load('columns') // Kolonlarla birlikte döndür
         ], 201);
     }
 
@@ -76,12 +139,75 @@ class TableController extends Controller
         if (!Schema::hasTable($table->name)) {
             Schema::create($table->name, function (Blueprint $blueprint) {
                 $blueprint->id();
+                $blueprint->unsignedBigInteger('created_by')->nullable();
+                $blueprint->unsignedBigInteger('updated_by')->nullable();
                 $blueprint->timestamps();
             });
+
+            // Otomatik eklenen kolonları 'columns' tablosuna da kaydet
+            $defaultColumns = [
+                [
+                    'table_id' => $table->id,
+                    'name' => 'id',
+                    'display_name' => 'ID',
+                    'type' => 'integer',
+                    'is_visible' => true,
+                    'is_editable' => false,
+                    'is_required' => true,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+                [
+                    'table_id' => $table->id,
+                    'name' => 'created_by',
+                    'display_name' => 'Oluşturan',
+                    'type' => 'integer',
+                    'is_visible' => false,
+                    'is_editable' => false,
+                    'is_required' => false,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+                [
+                    'table_id' => $table->id,
+                    'name' => 'updated_by',
+                    'display_name' => 'Güncelleyen',
+                    'type' => 'integer',
+                    'is_visible' => false,
+                    'is_editable' => false,
+                    'is_required' => false,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+                [
+                    'table_id' => $table->id,
+                    'name' => 'created_at',
+                    'display_name' => 'Oluşturulma Tarihi',
+                    'type' => 'datetime',
+                    'is_visible' => true,
+                    'is_editable' => false,
+                    'is_required' => false,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+                [
+                    'table_id' => $table->id,
+                    'name' => 'updated_at',
+                    'display_name' => 'Güncellenme Tarihi',
+                    'type' => 'datetime',
+                    'is_visible' => true,
+                    'is_editable' => false,
+                    'is_required' => false,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+            ];
+
+            \DB::table('columns')->insert($defaultColumns);
             
             return response()->json([
                 'message' => 'Veritabanı tablosu oluşturuldu',
-                'table' => $table
+                'table' => $table->load('columns')
             ]);
         }
         

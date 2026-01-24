@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\GenericCrudController;
 use App\Http\Controllers\Api\DynamicTableController;
 use App\Http\Controllers\Api\DynamicColumnController;
 use App\Http\Controllers\Api\AdminPermissionController;
+use App\Http\Controllers\Api\ForeignKeyController;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Api\AuthController;
 use Illuminate\Support\Facades\Route;
@@ -53,8 +54,12 @@ Route::middleware('auth:sanctum')->get(
 
 // Users
 Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/users/columns', [UserController::class, 'getColumns']); // kolonları getir
     Route::get('/users', [UserController::class, 'index']); // listele
-    Route::post('/users/{user}/assign-role', [UserController::class, 'assignRole']);
+    Route::post('/users', [UserController::class, 'store']); // ekle
+    Route::put('/users/{user}', [UserController::class, 'update']); // güncelle
+    Route::delete('/users/{user}', [UserController::class, 'destroy']); // sil
+    Route::post('/users/{user}/assign-role', [UserController::class, 'assignRole']); // (Opsiyonel: spesifik endpoint kalsın mı?)
     Route::post('/users/{user}/give-permission', [UserController::class, 'givePermission']);
 });
 
@@ -91,6 +96,39 @@ Route::middleware('auth:sanctum')->group(function () {
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/dynamic-tables', [DynamicTableController::class, 'index']);
     Route::post('/dynamic-tables', [DynamicTableController::class, 'store']);
+});
+
+// Foreign Key Options (Generic route'lardan önce gelmeli)
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/foreign-key-options/{table}', [ForeignKeyController::class, 'getOptions']);
+    Route::get('/foreign-key-relations', [ForeignKeyController::class, 'getRelations']);
+});
+
+// Filters (Generic route'lardan önce gelmeli)
+Route::middleware('auth:sanctum')->group(function () {
+    // Helper endpoints
+    Route::get('/filters/tables', [\App\Http\Controllers\Api\FilterController::class, 'getTables']);
+    Route::get('/filters/table-columns', [\App\Http\Controllers\Api\FilterController::class, 'getTableColumns']);
+    Route::get('/filters/placeholders', [\App\Http\Controllers\Api\FilterController::class, 'getPlaceholders']);
+    
+    // Test endpoint
+    Route::post('/filters/{filter}/test', [\App\Http\Controllers\Api\FilterController::class, 'testFilter']);
+    
+    // CRUD operations
+    Route::get('/filters', [\App\Http\Controllers\Api\FilterController::class, 'index']);
+    Route::post('/filters', [\App\Http\Controllers\Api\FilterController::class, 'store']);
+    Route::get('/filters/{filter}', [\App\Http\Controllers\Api\FilterController::class, 'show']);
+    Route::put('/filters/{filter}', [\App\Http\Controllers\Api\FilterController::class, 'update']);
+    Route::delete('/filters/{filter}', [\App\Http\Controllers\Api\FilterController::class, 'destroy']);
+});
+
+// Permission Set Filters (Generic route'lardan önce gelmeli)
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/permission-sets/{permissionSet}/filters', [\App\Http\Controllers\Api\PermissionSetFilterController::class, 'index']);
+    Route::post('/permission-sets/{permissionSet}/filters/attach', [\App\Http\Controllers\Api\PermissionSetFilterController::class, 'attach']);
+    Route::post('/permission-sets/{permissionSet}/filters/detach', [\App\Http\Controllers\Api\PermissionSetFilterController::class, 'detach']);
+    Route::put('/permission-sets/{permissionSet}/filters/update', [\App\Http\Controllers\Api\PermissionSetFilterController::class, 'update']);
+    Route::get('/permission-sets/{permissionSet}/filters/by-table-action', [\App\Http\Controllers\Api\PermissionSetFilterController::class, 'getByTableAndAction']);
 });
 
 // ⚠️ Generic route'lar EN SONDA olmalı (spesifik route'lardan sonra)

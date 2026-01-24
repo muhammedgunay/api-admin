@@ -1,12 +1,12 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api/axios'
 import { createRecord } from '../api/generic'
 import AddModal from '../components/AddModal.vue'
 
 const route = useRoute()
-const tableName = route.params.name
+const tableName = computed(() => route.params.name)
 
 const tableData = ref([])
 const tableInfo = ref(null)
@@ -18,7 +18,24 @@ const totalPages = ref(1)
 
 // Modal için state'ler
 const showAddModal = ref(false)
+const showEditModal = ref(false)
 const submitting = ref(false)
+const currentRecord = ref(null) // Düzenlenen kayıt
+
+// Foreign key değerlerini cache'le
+const foreignKeyCache = ref({})
+
+// Foreign key değerini label'a çevir
+const getForeignKeyLabel = (col, value) => {
+  if (!col.is_foreign_key || !value) return value
+  
+  const cacheKey = `${col.foreign_table}_${value}`
+  if (foreignKeyCache.value[cacheKey]) {
+    return foreignKeyCache.value[cacheKey]
+  }
+  
+  return value // Cache'de yoksa ID'yi göster
+}
 
 // Tablo bilgilerini çek
 const fetchTableInfo = async () => {
@@ -34,13 +51,13 @@ const fetchTableInfo = async () => {
     // Önce Table modelinde ara
     if (tablesRes.status === 'fulfilled') {
       const tableData = tablesRes.value.data.data ?? tablesRes.value.data
-      table = Array.isArray(tableData) ? tableData.find(t => t.name === tableName) : null
+      table = Array.isArray(tableData) ? tableData.find(t => t.name === tableName.value) : null
     }
 
     // Bulunamazsa DynamicTable'da ara
     if (!table && dynamicTablesRes.status === 'fulfilled') {
       const dynamicTableData = dynamicTablesRes.value.data.data ?? dynamicTablesRes.value.data
-      const found = Array.isArray(dynamicTableData) ? dynamicTableData.find(t => t.name === tableName) : null
+      const found = Array.isArray(dynamicTableData) ? dynamicTableData.find(t => t.name === tableName.value) : null
       if (found) {
         table = {
           ...found,
@@ -64,7 +81,7 @@ const fetchData = async () => {
   error.value = null
   
   try {
-    const res = await api.get(`/${tableName}?page=${currentPage.value}`)
+    const res = await api.get(`/${tableName.value}?page=${currentPage.value}`)
     
     // Pagination kontrolü
     if (res.data.data) {
@@ -83,24 +100,69 @@ const fetchData = async () => {
   }
 }
 
+// Foreign key verilerini önceden yükle
+const loadForeignKeyData = async () => {
+  const foreignKeyCols = columns.value.filter(col => col.is_foreign_key && col.foreign_table)
+  
+  for (const col of foreignKeyCols) {
+    try {
+      const displayColumn = col.foreign_display_column || 'name'
+      const res = await api.get(`/foreign-key-options/${col.foreign_table}?display_column=${displayColumn}`)
+      
+      // Cache'e ekle
+      res.data.options?.forEach(option => {
+        const cacheKey = `${col.foreign_table}_${option.value}`
+        foreignKeyCache.value[cacheKey] = option.label
+      })
+    } catch (e) {
+      console.error(`Foreign key verileri yüklenemedi (${col.foreign_table}):`, e)
+    }
+  }
+}
+
 // Görünür kolonlar
 const visibleColumns = computed(() => {
   return columns.value.filter(col => col.is_visible)
 })
 
 // Form field'larını kolonlardan oluştur
-const formFields = computed(() => {
-  return columns.value
-    .filter(col => col.name !== 'id' && col.name !== 'created_at' && col.name !== 'updated_at')
-    .map(col => {
-      const field = {
-        name: col.name,
-        label: col.display_name,
-        required: col.is_required,
-        placeholder: col.display_name,
-      }
+const prepareFormFields = async (record = null) => {
+  const fields = []
+  
+  for (const col of columns.value) {
+    // Otomatik doldurulan alanları atla
+    if (['id', 'created_at', 'updated_at', 'created_by', 'updated_by'].includes(col.name)) {
+      continue
+    }
+    
+    const field = {
+      name: col.name,
+      label: col.display_name,
+      required: col.is_required,
+      placeholder: col.display_name,
+      value: record ? record[col.name] || '' : ''
+    }
 
-      // Kolon tipine göre input tipi belirle
+    // 🔗 FOREIGN KEY kontrolü
+    if (col.is_foreign_key && col.foreign_table) {
+      field.type = 'select'
+      field.loading = true
+      field.options = []
+      
+      try {
+        // Foreign key seçeneklerini API'den çek
+        const displayColumn = col.foreign_display_column || 'name'
+        const res = await api.get(`/foreign-key-options/${col.foreign_table}?display_column=${displayColumn}`)
+        field.options = res.data.options || []
+        field.loading = false
+      } catch (e) {
+        console.error(`Foreign key options yüklenemedi (${col.foreign_table}):`, e)
+        field.options = []
+        field.loading = false
+      }
+    }
+    // Normal kolon tipleri
+    else {
       switch (col.type) {
         case 'string':
         case 'varchar':
@@ -140,18 +202,41 @@ const formFields = computed(() => {
         default:
           field.type = 'text'
       }
+    }
 
-      return field
-    })
-})
+    fields.push(field)
+  }
+  
+  return fields
+}
+
+// Yeni kayıt için form fields
+const formFields = ref([])
+
+// Düzenleme için form fields
+const editFormFields = ref([])
 
 // Modal açma/kapama fonksiyonları
-const openAddModal = () => {
+const openAddModal = async () => {
+  currentRecord.value = null
+  formFields.value = await prepareFormFields()
   showAddModal.value = true
+}
+
+const openEditModal = async (record) => {
+  currentRecord.value = { ...record }
+  editFormFields.value = await prepareFormFields(currentRecord.value)
+  showEditModal.value = true
 }
 
 const closeAddModal = () => {
   showAddModal.value = false
+  currentRecord.value = null
+}
+
+const closeEditModal = () => {
+  showEditModal.value = false
+  currentRecord.value = null
 }
 
 // Yeni kayıt ekleme
@@ -159,11 +244,26 @@ const handleSubmit = async (formData) => {
   submitting.value = true
   
   try {
-    await createRecord(tableName, formData)
+    await createRecord(tableName.value, formData)
     await fetchData()
     closeAddModal()
   } catch (e) {
     alert(e.response?.data?.message || 'Kayıt eklenirken bir hata oluştu')
+  } finally {
+    submitting.value = false
+  }
+}
+
+// Kayıt güncelleme
+const handleUpdate = async (formData) => {
+  submitting.value = true
+  
+  try {
+    await api.put(`/${tableName.value}/${currentRecord.value.id}`, formData)
+    await fetchData()
+    closeEditModal()
+  } catch (e) {
+    alert(e.response?.data?.message || 'Güncelleme başarısız')
   } finally {
     submitting.value = false
   }
@@ -174,7 +274,7 @@ const deleteRecord = async (id) => {
   if (!confirm('Bu kaydı silmek istediğinize emin misiniz?')) return
   
   try {
-    await api.delete(`/${tableName}/${id}`)
+    await api.delete(`/${tableName.value}/${id}`)
     await fetchData()
   } catch (e) {
     alert(e.response?.data?.message || 'Silme işlemi başarısız')
@@ -187,8 +287,26 @@ const changePage = (page) => {
   fetchData()
 }
 
+// Route değişikliklerini dinle
+watch(() => route.params.name, async (newName, oldName) => {
+  if (newName && newName !== oldName) {
+    // Sayfayı sıfırla
+    currentPage.value = 1
+    tableData.value = []
+    tableInfo.value = null
+    columns.value = []
+    foreignKeyCache.value = {}
+    
+    // Yeni verileri yükle
+    await fetchTableInfo()
+    await loadForeignKeyData()
+    await fetchData()
+  }
+})
+
 onMounted(async () => {
   await fetchTableInfo()
+  await loadForeignKeyData()
   await fetchData()
 })
 </script>
@@ -234,7 +352,10 @@ onMounted(async () => {
           <tbody>
             <tr v-for="row in tableData" :key="row.id">
               <td v-for="col in visibleColumns" :key="col.id">
-                <template v-if="col.type === 'boolean'">
+                <template v-if="col.is_foreign_key">
+                  {{ getForeignKeyLabel(col, row[col.name]) }}
+                </template>
+                <template v-else-if="col.type === 'boolean'">
                   {{ row[col.name] ? '✅' : '❌' }}
                 </template>
                 <template v-else-if="col.type === 'date'">
@@ -245,7 +366,7 @@ onMounted(async () => {
                 </template>
               </td>
               <td class="actions-col">
-                <button class="btn-icon" title="Düzenle">✏️</button>
+                <button class="btn-icon" title="Düzenle" @click="openEditModal(row)">✏️</button>
                 <button class="btn-icon" title="Sil" @click="deleteRecord(row.id)">🗑️</button>
               </td>
             </tr>
@@ -285,6 +406,16 @@ onMounted(async () => {
       :loading="submitting"
       @close="closeAddModal"
       @submit="handleSubmit"
+    />
+
+    <!-- Edit Modal -->
+    <AddModal
+      :show="showEditModal"
+      :title="`${tableInfo?.display_name || tableName} Düzenle`"
+      :fields="editFormFields"
+      :loading="submitting"
+      @close="closeEditModal"
+      @submit="handleUpdate"
     />
   </div>
 </template>

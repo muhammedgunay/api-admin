@@ -28,9 +28,12 @@ const errors = ref({})
 
 // Form data'yı fields'a göre başlat
 watch(() => props.fields, (newFields) => {
-  const data = {}
+  const data = { ...formData.value } // Mevcut değerleri koru
   newFields.forEach(field => {
-    data[field.name] = field.value || ''
+    // Sadece henüz değeri olmayanları ekle
+    if (!(field.name in data)) {
+      data[field.name] = field.value || ''
+    }
   })
   formData.value = data
 }, { immediate: true })
@@ -87,7 +90,7 @@ const submit = () => {
             </label>
             
             <input
-              v-if="['text', 'email', 'number', 'date', 'datetime-local', 'time'].includes(field.type) || !field.type"
+              v-if="['text', 'email', 'number', 'date', 'datetime-local', 'time', 'password'].includes(field.type) || !field.type"
               :id="field.name"
               v-model="formData[field.name]"
               :type="field.type || 'text'"
@@ -112,12 +115,17 @@ const submit = () => {
               v-model="formData[field.name]"
               class="form-select"
               :class="{ error: errors[field.name] }"
+              @change="field.onChange && field.onChange(formData[field.name])"
             >
               <option value="">Seçiniz...</option>
               <option v-for="option in field.options" :key="option.value" :value="option.value">
                 {{ option.label }}
               </option>
             </select>
+            
+            <span v-if="field.hint" class="field-hint">
+              💡 {{ field.hint }}
+            </span>
             
             <span v-if="errors[field.name]" class="error-message">
               {{ errors[field.name] }}
@@ -292,6 +300,14 @@ const submit = () => {
   margin-top: 6px;
   font-size: 12px;
   color: #ef4444;
+}
+
+.field-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #6b7280;
+  font-style: italic;
 }
 
 .modal-footer {
